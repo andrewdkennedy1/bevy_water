@@ -67,18 +67,24 @@ struct SpatialHash {
     pressures: Vec<f32>,
 }
 
+#[derive(Resource, Default)]
+pub struct UiState {
+    pub pointer_over_ui: bool,
+}
+
 pub struct ParticleFluidPlugin;
 
 impl Plugin for ParticleFluidPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SimSettings>()
             .init_resource::<SpatialHash>()
+            .init_resource::<UiState>()
             .add_systems(Startup, particle_setup)
             .add_systems(
                 Update,
                 (
                     ui_system,
-                    build_spatial_hash,
+                    build_spatial_hash.after(ui_system),
                     compute_density_and_pressure.after(build_spatial_hash),
                     compute_forces.after(compute_density_and_pressure),
                     integrate_and_render.after(compute_forces),
@@ -89,7 +95,8 @@ impl Plugin for ParticleFluidPlugin {
 
 fn ui_system(
     mut contexts: EguiContexts, 
-    mut settings: ResMut<SimSettings>, 
+    mut settings: ResMut<SimSettings>,
+    mut ui_state: ResMut<UiState>,
     mut q: Query<&mut Vel, With<WaterParticle>>,
     mut frame: Local<u32>
 ) {
@@ -98,6 +105,9 @@ fn ui_system(
     if *frame < 3 { return; }
     
     let Ok(ctx) = contexts.ctx_mut() else { return; };
+    
+    // Track if pointer is over UI for other systems
+    ui_state.pointer_over_ui = ctx.is_pointer_over_area();
     
     egui::Window::new("Fluid Controls").show(ctx, |ui| {
         ui.add(egui::Slider::new(&mut settings.gravity, -500.0..=500.0).text("Gravity"));
@@ -169,7 +179,7 @@ fn cell_of(p: Vec2, h: f32) -> (i32, i32) {
 fn build_spatial_hash(
     settings: Res<SimSettings>,
     pointer: Res<Pointer>,
-    mut contexts: EguiContexts,
+    ui_state: Res<UiState>,
     mut sh: ResMut<SpatialHash>,
     q: Query<(&Pos, &Vel, &ParticleIndex), With<WaterParticle>>
 ) {
@@ -187,7 +197,7 @@ fn build_spatial_hash(
     }
 
     // Skip interaction if pointer is over UI
-    if contexts.ctx_mut().map_or(false, |ctx| ctx.is_pointer_over_area()) {
+    if ui_state.pointer_over_ui {
         return;
     }
 
